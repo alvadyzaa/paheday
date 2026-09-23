@@ -34,7 +34,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: state.json
-          key: paheday-state-${{ github.run_id }}
+          # run_attempt penting: tombol Re-run mendapat run_id sama, tetapi
+          # harus membuat cache baru agar state hasil attempt sebelumnya tersimpan.
+          key: paheday-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             paheday-state-
 
