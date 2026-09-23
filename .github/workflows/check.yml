@@ -1,4 +1,5 @@
 name: PaheDay check
+run-name: "PaheDay check #${{ github.run_number }}"
 
 # Cek pahe.ink & dramaday.me sesuai jadwal, kirim notif ke Telegram.
 # State (post yang sudah dilihat) disimpan via Actions cache agar awet antar run.
