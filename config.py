@@ -105,6 +105,10 @@ class Config:
     DRAMADAY_URL = "https://dramaday.me"
     N3X_URL = "https://n3x.me"
 
+    # --- TMDB (upcoming movies). Key gratis: themoviedb.org -> Settings -> API ---
+    TMDB_API_KEY: str = os.getenv("TMDB_API_KEY", "").strip()
+    TMDB_REGION: str = os.getenv("TMDB_REGION", "ID").strip().upper() or "ID"
+
     @classmethod
     def validate(cls, strict: bool = True) -> list[str]:
         errors: list[str] = []

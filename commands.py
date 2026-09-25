@@ -4,7 +4,7 @@ Perintah yang didukung:
     /start, /help            -> bantuan
     /upcoming_kdrama         -> jadwal tayang Korea (TVMaze, hari ini + besok)
     /upcoming_series         -> jadwal tayang US (TVMaze, hari ini + besok)
-    /upcoming_movies         -> info: butuh TMDB API key (belum aktif)
+    /upcoming_movies         -> film segera rilis (TMDB, butuh TMDB_API_KEY)
 
 Cara kerja: tiap run (cron Actions maupun loop) ambil update Telegram yang
 belum dibaca (offset tersimpan di state.json), balas perintah, simpan offset.
@@ -13,6 +13,7 @@ Hanya chat yang terdaftar di TELEGRAM_CHAT_IDS yang dilayani.
 """
 from __future__ import annotations
 
+import html
 import time
 from datetime import date, timedelta
 
@@ -43,7 +44,7 @@ HELP_TEXT = (
     "<b>PaheDay commands</b>\n"
     "/upcoming_kdrama - jadwal tayang Korea (hari ini + besok)\n"
     "/upcoming_series - jadwal tayang US (hari ini + besok)\n"
-    "/upcoming_movies - segera (butuh TMDB API key)\n"
+    "/upcoming_movies - film segera rilis (TMDB)\n"
     "/help - pesan ini"
 )
 
@@ -73,7 +74,12 @@ def _show_line(item: dict) -> str | None:
     ep_tag = f" S{se}E{ep}" if se and ep else ""
     jam = str(item.get("airtime") or "")[:5]
     ekor = f"{net} {jam}".strip()
-    return f"{name}{ep_tag} - {ekor}" if ekor else f"{name}{ep_tag}"
+    # judul bisa diklik: halaman TVMaze (selalu ada) atau situs resmi
+    url = (show.get("url") or show.get("officialSite") or "").strip()
+    judul = html.escape(name)
+    if url:
+        judul = f'<a href="{html.escape(url, quote=True)}">{judul}</a>'
+    return f"{judul}{ep_tag} - {ekor}" if ekor else f"{judul}{ep_tag}"
 
 
 def format_upcoming(country: str, label: str, days: int = 2, limit: int = 30) -> str:
@@ -98,6 +104,58 @@ def format_upcoming(country: str, label: str, days: int = 2, limit: int = 30) ->
             blocks.extend(f"{n + 1}. {ln}" for n, ln in enumerate(lines))
         else:
             blocks.append("(tidak ada)")
+    return "\n".join(blocks)[:4000]
+
+
+TMDB_API = "https://api.themoviedb.org/3"
+
+
+def fetch_upcoming_movies(region: str = "ID", page: int = 1) -> list[dict]:
+    """Film segera rilis via TMDB. Butuh Config.TMDB_API_KEY. Raises kalau gagal."""
+    if not Config.TMDB_API_KEY:
+        raise RuntimeError("TMDB_API_KEY belum dipasang (isi di .env / secrets)")
+    r = requests.get(
+        f"{TMDB_API}/movie/upcoming",
+        params={"api_key": Config.TMDB_API_KEY, "region": (region or "ID").upper(),
+                "language": "en-US", "page": page},
+        headers={"User-Agent": UA},
+        timeout=25,
+    )
+    r.raise_for_status()
+    data = r.json()
+    results = data.get("results", []) if isinstance(data, dict) else []
+    return [m for m in results if isinstance(m, dict)]
+
+
+def _tgl_indo(iso: str) -> str:
+    """'2026-10-02' -> '02 Okt 2026'. Gagal = apa adanya."""
+    try:
+        y, m, d = iso.split("-")
+        return f"{int(d):02d} {_BULAN[int(m)]} {y}"
+    except Exception:  # noqa: BLE001
+        return iso or "-"
+
+
+def format_upcoming_movies(region: str = "ID", limit: int = 20) -> str:
+    """Teks film segera rilis (TMDB). Judul bisa diklik ke halaman TMDB."""
+    try:
+        movies = fetch_upcoming_movies(region)[:limit]
+    except Exception as e:  # noqa: BLE001
+        return f"Gagal ambil upcoming movies: {e}"
+    blocks = [f"<b>Upcoming Movies ({(region or 'ID').upper()}, sumber: TMDB)</b>"]
+    for n, m in enumerate(movies, 1):
+        title = html.escape(str(m.get("title") or "?"))
+        mid = m.get("id")
+        if mid:
+            title = f'<a href="https://www.themoviedb.org/movie/{mid}">{title}</a>'
+        rel = _tgl_indo(str(m.get("release_date") or ""))
+        rating = m.get("vote_average") or 0
+        bit = f"rilis {rel}"
+        if rating:
+            bit += f" | Rating {rating:.1f}"
+        blocks.append(f"{n}. {title} - {bit}")
+    if not movies:
+        blocks.append("(tidak ada)")
     return "\n".join(blocks)[:4000]
 
 
@@ -139,11 +197,7 @@ def _route(cmd: str) -> str | None:
     if cmd == "/upcoming_series":
         return format_upcoming("US", "Upcoming Series US")
     if cmd == "/upcoming_movies":
-        return (
-            "Upcoming movies belum aktif - butuh TMDB API key gratis.\n"
-            "Daftar 1 menit di themoviedb.org - Settings - API, "
-            "lalu kabari untuk dipasang."
-        )
+        return format_upcoming_movies(Config.TMDB_REGION)
     if cmd.startswith("/"):
         return "Perintah tidak dikenal. Coba /help"
     return None

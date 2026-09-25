@@ -54,6 +54,8 @@ jobs:
           N3X_MAX_AGE_DAYS: "14"
           N3X_NOTIFY_UPDATES: "false"
           N3X_EXCLUDE: ""
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TMDB_REGION: "ID"
         run: |
           if [ -f state.json ]; then
             python main.py --once

@@ -105,11 +105,15 @@ DRAMADAY_NOTIFY_UPDATES=true
 
 ### 6. Slash commands (upcoming) via TVMaze
 
-Chat ke bot: `/help`, `/upcoming_kdrama`, `/upcoming_series`,
-`/upcoming_movies` (movies: segera, butuh TMDB API key gratis).
-Jadwal diambil live dari TVMaze (tanpa API key, data real: judul, season/
-episode, network, jam tayang) — hari ini + besok, tipe Berita/Talkshow/
-Olahraga dibuang otomatis.
+Chat ke bot: `/help`, `/upcoming_kdrama`, `/upcoming_series`, `/upcoming_movies`.
+- K-drama/series: live dari TVMaze (tanpa API key, data real: judul bisa
+  diklik, season/episode, network, jam tayang) — hari ini + besok, tipe
+  Berita/Talkshow/Olahraga dibuang otomatis.
+- Movies: live dari TMDB (`/movie/upcoming`, region Indonesia default).
+  Butuh `TMDB_API_KEY` gratis (themoviedb.org → Settings → API): isi di
+  `.env` untuk lokal, dan tambah secret `TMDB_API_KEY` di repo
+  (Settings → Secrets → Actions) untuk GitHub Actions. Tanpa key,
+  bot membalas pesan info, bukan error.
 
 Catatan latensi: command dibaca tiap run. Di GitHub Actions (cron tiap
 30 menit) balasan bisa telat sampai ~30 menit. Instant hanya kalau bot
@@ -122,7 +126,7 @@ pilih bot → kirim:
 ```text
 upcoming_kdrama - jadwal tayang Korea (hari ini + besok)
 upcoming_series - jadwal tayang US (hari ini + besok)
-upcoming_movies - segera (butuh TMDB API key)
+upcoming_movies - film segera rilis (TMDB, region ID)
 help - bantuan
 ```
 
@@ -140,7 +144,7 @@ Diposting: Senin, 24 Agu 2026 - 22:55 WIB
 Diupdate: Rabu, 23 Sep 2026 - 04:58 WIB
 ```
 Dilengkapi poster drama sebagai foto. Kalau foto gagal terkirim,
-otomatis fallback ke pesan teks + sinopsis.
+otomatis fallback ke pesan teks (caption + link, tanpa sinopsis).
 
 ## Contoh notif pahe (foto + caption)
 
