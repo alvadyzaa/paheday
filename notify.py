@@ -148,17 +148,11 @@ def format_post(source_label: str, post: dict, is_update: bool = False) -> str:
     pub = html.escape(post.get("date", ""))
     mod = html.escape(post.get("modified", ""))
     cats = ", ".join(html.escape(c) for c in post.get("categories", [])[:6])
-    desc = (post.get("description", "") or "").strip()
-    if len(desc) > 220:
-        desc = desc[:220].rstrip() + "…"
-    desc = html.escape(desc)
-
     tag = "🔄 <b>UPDATE EPISODE</b>" if is_update else "🆕 <b>POST BARU</b>"
     lines = [f"{tag} — {source_label}", f'🎬 <a href="{link}"><b>{title}</b></a>']
     if cats:
         lines.append(f"🏷 {cats}")
-    if desc:
-        lines.append(f"\n{desc}")
+    lines.append(f"\n🔗 {link}")
     lines.append(f"\n🔗 {link}")
     lines.append(f"Diposting: {html.escape(format_waktu(pub))}")
     if mod and mod != pub:
@@ -169,8 +163,8 @@ def format_post(source_label: str, post: dict, is_update: bool = False) -> str:
 def format_dramaday(post: dict, info: dict, is_update: bool = False) -> tuple[str, str]:
     """Return (caption, fallback_text) untuk dramaday.
 
-    Caption ringkas (<=1000 char) untuk sendPhoto, fallback_text versi
-    lengkap untuk sendMessage bila foto gagal terkirim.
+    Caption ringkas (<=1000 char) untuk sendPhoto, fallback_text =
+    caption + link (tanpa sinopsis) untuk sendMessage bila foto gagal.
     """
     title = html.escape(post.get("title", "(tanpa judul)"))
     link = html.escape(post.get("link", ""), quote=True)
@@ -210,13 +204,9 @@ def format_dramaday(post: dict, info: dict, is_update: bool = False) -> tuple[st
         lines.append(f"Diupdate: {html.escape(format_waktu(mod))}")
     caption = "\n".join(lines)
 
-    # fallback teks: caption + sinopsis
-    desc = (post.get("description", "") or "").strip()
-    if len(desc) > 200:
-        desc = desc[:200].rstrip() + "..."
+    # fallback teks: caption + link (tanpa sinopsis)
     fallback = caption
-    if desc and not info.get("is_ost"):
-        fallback += f"\n\n{html.escape(desc)}"
+    fallback += f"\n{link}"
     fallback += f"\n{link}"
     return caption, fallback
 
@@ -252,12 +242,8 @@ def format_pahe(post: dict, is_update: bool = False) -> tuple[str, str]:
         lines.append(f"Diupdate: {html.escape(format_waktu(mod))}")
     caption = "\n".join(lines)
 
-    desc = (post.get("description", "") or "").strip()
-    if len(desc) > 200:
-        desc = desc[:200].rstrip() + "..."
     fallback = caption
-    if desc:
-        fallback += f"\n\n{html.escape(desc)}"
+    fallback += f"\n{link}"
     fallback += f"\n{link}"
     return caption, fallback
 
@@ -295,12 +281,8 @@ def format_n3x(post: dict, is_update: bool = False) -> tuple[str, str]:
     lines.append(f"Diposting: {html.escape(format_waktu(pub))}")
     caption = "\n".join(lines)
 
-    desc = (post.get("description", "") or "").strip()
-    if len(desc) > 200:
-        desc = desc[:200].rstrip() + "..."
     fallback = caption
-    if desc:
-        fallback += f"\n\n{html.escape(desc)}"
+    fallback += f"\n{link}"
     fallback += f"\n{link}"
     return caption, fallback
 
