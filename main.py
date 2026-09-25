@@ -33,6 +33,7 @@ from sources import (
     post_age_days,
     resolve_tag_names,
 )
+from commands import handle_commands
 from storage import load, save
 
 SOURCES = [
@@ -288,7 +289,8 @@ def main() -> None:
 
     if args.once:
         n = check_once(send=True)
-        print(f"Selesai, terkirim ke {n} chat (akumulasi).")
+        c = handle_commands(send=True)
+        print(f"Selesai, {n} notif + {c} balasan command terkirim.")
         return
 
     # mode loop
@@ -299,7 +301,8 @@ def main() -> None:
     while True:
         try:
             n = check_once(send=True)
-            print(f"[loop] putaran selesai, {n} terkirim.")
+            c = handle_commands(send=True)
+            print(f"[loop] putaran selesai, {n} notif + {c} balasan command.")
         except KeyboardInterrupt:
             print("Berhenti (Ctrl+C).")
             break

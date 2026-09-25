@@ -98,9 +98,32 @@ PAHE_MAX_AGE_DAYS=3        # pahe posting deras + pack Complete sering ke-touch
 DRAMADAY_MAX_AGE_DAYS=90   # dramaday = drama ongoing, 60-90 hari agar
                            # update episode 2-3 bulan setelah publish tetap masuk
 # update pahe hampir selalu noise -> default false.
-# update dramaday = episode baru -> default true (ikut NOTIFY_UPDATES).
+# update dramaday = episode baru -> default ikut NOTIFY_UPDATES (true).
 PAHE_NOTIFY_UPDATES=false
 DRAMADAY_NOTIFY_UPDATES=true
+```
+
+### 6. Slash commands (upcoming) via TVMaze
+
+Chat ke bot: `/help`, `/upcoming_kdrama`, `/upcoming_series`,
+`/upcoming_movies` (movies: segera, butuh TMDB API key gratis).
+Jadwal diambil live dari TVMaze (tanpa API key, data real: judul, season/
+episode, network, jam tayang) — hari ini + besok, tipe Berita/Talkshow/
+Olahraga dibuang otomatis.
+
+Catatan latensi: command dibaca tiap run. Di GitHub Actions (cron tiap
+30 menit) balasan bisa telat sampai ~30 menit. Instant hanya kalau bot
+jalan mode loop 24/7 (`python main.py` di PC/VPS). Hanya chat di
+`TELEGRAM_CHAT_IDS` yang dilayani; chat asing diabaikan.
+
+Agar command muncul di menu Telegram: chat @BotFather → `/setcommands` →
+pilih bot → kirim:
+
+```text
+upcoming_kdrama - jadwal tayang Korea (hari ini + besok)
+upcoming_series - jadwal tayang US (hari ini + besok)
+upcoming_movies - segera (butuh TMDB API key)
+help - bantuan
 ```
 
 ## Contoh notif dramaday (foto + caption)
