@@ -127,8 +127,32 @@ pilih bot → kirim:
 upcoming_kdrama - jadwal tayang Korea (hari ini + besok)
 upcoming_series - jadwal tayang US (hari ini + besok)
 upcoming_movies - film segera rilis (TMDB, region ID)
+releases_today - rilis hari ini (digest manual)
 help - bantuan
 ```
+
+### 7. Digest NEW RELEASE otomatis tiap hari
+
+Tiap run pertama di hari baru (WIB), bot mengirim 1x digest:
+
+```text
+NEW RELEASE - Sabtu, 26 Sep 2026
+
+K-Drama & Acara Korea
+1. Amazing Saturday S2026E38 - tvN 19:40
+...
+Series US
+1. Crossroad Springs S2E4 - ... (khusus Scripted/Animation)
+...
+Movies
+1. Invention 13
+...
+```
+
+Isi: TVMaze KR+US yang tayang hari ini + TMDB discover yang rilis hari ini
+(region `TMDB_REGION`). Semua judul bisa diklik. Dedup via
+`release_digest: tanggal` di state.json — tidak spam tiap 30 menit.
+Hari tanpa rilis = tidak dikirim sama sekali.
 
 ## Contoh notif dramaday (foto + caption)
 

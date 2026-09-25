@@ -45,6 +45,7 @@ HELP_TEXT = (
     "/upcoming_kdrama - jadwal tayang Korea (hari ini + besok)\n"
     "/upcoming_series - jadwal tayang US (hari ini + besok)\n"
     "/upcoming_movies - film segera rilis (TMDB)\n"
+    "/releases_today - rilis hari ini (digest manual)\n"
     "/help - pesan ini"
 )
 
@@ -86,7 +87,7 @@ def format_upcoming(country: str, label: str, days: int = 2, limit: int = 30) ->
     """Teks jadwal TVMaze hari ini + besok. Aman <=4000 char."""
     blocks = [f"<b>{label} (sumber: TVMaze)</b>"]
     for i in range(max(days, 1)):
-        d = date.today() + timedelta(days=i)
+        d = _today_wib() + timedelta(days=i)
         try:
             items = fetch_schedule(country, d)
         except Exception as e:  # noqa: BLE001
@@ -159,6 +160,113 @@ def format_upcoming_movies(region: str = "ID", limit: int = 20) -> str:
     return "\n".join(blocks)[:4000]
 
 
+def _today_wib() -> date:
+    """Tanggal hari ini dalam WIB (runner Actions = UTC, jadi +7 jam manual)."""
+    from datetime import datetime, timedelta as _td, timezone
+
+    return (datetime.now(timezone.utc) + _td(hours=7)).date()
+
+
+def fetch_movies_released_on(day: date, region: str = "ID") -> list[dict]:
+    """Film yang rilis TEPAT pada tanggal tsb via TMDB discover.
+    Tanpa key -> list kosong (section movies dilewat, bukan error)."""
+    if not Config.TMDB_API_KEY:
+        return []
+    r = requests.get(
+        f"{TMDB_API}/discover/movie",
+        params={"api_key": Config.TMDB_API_KEY, "region": (region or "ID").upper(),
+                "language": "en-US", "primary_release_date.gte": day.isoformat(),
+                "primary_release_date.lte": day.isoformat(),
+                "sort_by": "popularity.desc", "include_adult": "false", "page": 1},
+        headers={"User-Agent": UA},
+        timeout=25,
+    )
+    r.raise_for_status()
+    data = r.json()
+    results = data.get("results", []) if isinstance(data, dict) else []
+    return [m for m in results if isinstance(m, dict)]
+
+
+def _movie_digest_line(n: int, m: dict) -> str:
+    title = html.escape(str(m.get("title") or "?"))
+    mid = m.get("id")
+    if mid:
+        title = f'<a href="https://www.themoviedb.org/movie/{mid}">{title}</a>'
+    rating = m.get("vote_average") or 0
+    bit = f"Rating {rating:.1f}" if rating else ""
+    return f"{n}. {title}" + (f" - {bit}" if bit else "")
+
+
+def build_release_digest(day: date | None = None, tv_limit: int = 15, movie_limit: int = 15) -> str:
+    """Notif NEW RELEASE: tayang/rilis hari ini (WIB). '' kalau kosong."""
+    d = day or _today_wib()
+    hari = f"{_HARI[d.weekday()]}, {d.day} {_BULAN[d.month]} {d.year}"
+    sections: list[str] = []
+    # US khusus Scripted/Animation (buang reality/daytime); KR tetap longgar
+    # karena variety Korea termasuk konten yang dicari.
+    allow = {"KR": None, "US": {"scripted", "animation"}}
+    for country, judul in (("KR", "K-Drama & Acara Korea"), ("US", "Series US")):
+        try:
+            items = fetch_schedule(country, d)
+        except Exception:  # noqa: BLE001
+            items = []
+        lines: list[str] = []
+        for it in items:
+            show = it.get("show", {}) or {}
+            only = allow.get(country)
+            if only is not None and str(show.get("type") or "").lower() not in only:
+                continue
+            line = _show_line(it)
+            if line:
+                lines.append(line)
+            if len(lines) >= tv_limit:
+                break
+        if lines:
+            sections.append(f"\n<b>{judul}</b>")
+            sections.extend(f"{n + 1}. {ln}" for n, ln in enumerate(lines))
+    try:
+        movies = fetch_movies_released_on(d, Config.TMDB_REGION)[:movie_limit]
+    except Exception:  # noqa: BLE001
+        movies = []
+    if movies:
+        sections.append("\n<b>Movies</b>")
+        sections.extend(_movie_digest_line(n + 1, m) for n, m in enumerate(movies))
+    if not sections:
+        return ""
+    return (f"<b>NEW RELEASE - {hari}</b>\n" + "\n".join(sections))[:4000]
+
+
+def maybe_send_release_digest(send: bool = True) -> int:
+    """Kirim digest NEW RELEASE sekali per hari (WIB). Return jml chat."""
+    if not Config.BOT_TOKEN or not Config.CHAT_IDS:
+        return 0
+    state = load(Config.STATE_FILE)
+    today = _today_wib().isoformat()
+    if state.get("release_digest") == today:
+        return 0
+    text = build_release_digest()
+    if not text:
+        print("[digest] tidak ada rilis hari ini, skip")
+        return 0
+    n = 0
+    if send:
+        for cid in Config.CHAT_IDS:
+            ok = False
+            for chunk in _chunks(text):
+                if send_message(Config.BOT_TOKEN, cid, chunk):
+                    ok = True
+                time.sleep(0.4)
+            if ok:
+                n += 1
+        print(f"  [digest] NEW RELEASE -> {n} chat")
+    else:
+        print("  [skip-kirim-digest]")
+    state["release_digest"] = today
+    if send:
+        save(Config.STATE_FILE, state)
+    return n
+
+
 def _chunks(text: str, limit: int = 4000) -> list[str]:
     """Potong teks panjang per baris agar <= limit Telegram (4096)."""
     if len(text) <= limit:
@@ -198,6 +306,8 @@ def _route(cmd: str) -> str | None:
         return format_upcoming("US", "Upcoming Series US")
     if cmd == "/upcoming_movies":
         return format_upcoming_movies(Config.TMDB_REGION)
+    if cmd == "/releases_today":
+        return build_release_digest() or "(belum ada rilis hari ini)"
     if cmd.startswith("/"):
         return "Perintah tidak dikenal. Coba /help"
     return None

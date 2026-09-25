@@ -33,7 +33,7 @@ from sources import (
     post_age_days,
     resolve_tag_names,
 )
-from commands import handle_commands
+from commands import handle_commands, maybe_send_release_digest
 from storage import load, save
 
 SOURCES = [
@@ -290,7 +290,8 @@ def main() -> None:
     if args.once:
         n = check_once(send=True)
         c = handle_commands(send=True)
-        print(f"Selesai, {n} notif + {c} balasan command terkirim.")
+        r = maybe_send_release_digest(send=True)
+        print(f"Selesai, {n} notif + {c} balasan command + {r} digest terkirim.")
         return
 
     # mode loop
@@ -302,7 +303,8 @@ def main() -> None:
         try:
             n = check_once(send=True)
             c = handle_commands(send=True)
-            print(f"[loop] putaran selesai, {n} notif + {c} balasan command.")
+            r = maybe_send_release_digest(send=True)
+            print(f"[loop] putaran selesai, {n} notif + {c} balasan + {r} digest.")
         except KeyboardInterrupt:
             print("Berhenti (Ctrl+C).")
             break
