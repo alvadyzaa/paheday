@@ -1,7 +1,7 @@
-# PaheDay — Telegram Notifier untuk pahe.ink & dramaday.me
+# PaheDay — Telegram Notifier untuk pahe.ink, dramaday.me & n3x.me
 
 Bot Python sederhana yang memantau postingan **baru maupun update episode**
-dari `pahe.ink` dan `dramaday.me`, lalu mengirim notifikasi ke Telegram.
+dari `pahe.ink`, `dramaday.me`, dan `n3x.me`, lalu mengirim notifikasi ke Telegram.
 
 ## Kenapa bukan RSS saja?
 
@@ -69,6 +69,29 @@ DRAMADAY_EXCLUDE=OST
 NOTIFY_UPDATES=true
 ```
 
+### 5. Anti-spam postingan lama (mis. postingan 2018 ikut ke-notify)
+
+Penyebab: bot memakai `orderby=modified`, jadi postingan lama yang ke-touch
+(edit typo/iklan/SEO → `modified` jadi hari ini) naik ke daftar teratas dan
+ikut terkirim sebagai BARU/UPDATE.
+
+Fix: bot hanya mengirim postingan **recent** berdasar tanggal **publish**
+(`date`), bukan `modified`. Postingan tua tetap ditandai sudah-dilihat
+agar tidak spam berulang (log `[skip-tua]`).
+
+Di `.env`:
+
+```ini
+# batas umur publish yang boleh memicu notif (hari). 0 = tanpa batas.
+PAHE_MAX_AGE_DAYS=14       # pahe = film sekali-post, cukup 7-14 hari
+DRAMADAY_MAX_AGE_DAYS=90   # dramaday = drama ongoing, 60-90 hari agar
+                           # update episode 2-3 bulan setelah publish tetap masuk
+# update pahe hampir selalu noise -> default false.
+# update dramaday = episode baru -> default true (ikut NOTIFY_UPDATES).
+PAHE_NOTIFY_UPDATES=false
+DRAMADAY_NOTIFY_UPDATES=true
+```
+
 ## Contoh notif dramaday (foto + caption)
 
 ```text
@@ -95,6 +118,21 @@ Genre: Biography, Drama, Sport
 Link download
 ```
 Poster film ikut sebagai foto, tahun/kualitas/codec dibaca dari tag.
+
+## Contoh notif n3x.me (foto + caption)
+
+```text
+POST BARU - N3x.me (Movie)
+Antz (1998)
+Genre: Animation, Comedy, Family
+1998 | Rating 7.1 | 83 min
+Link streaming/download
+Diposting: Jumat, 25 Sep 2026 - 18:29 WIB
+```
+
+Sumber ketiga via public JSON API (`/api/posts`, pagination `?page&limit`).
+API tidak punya konsep `modified`, jadi hanya rilisan BARU yang memicu notif
+— otomatis kebal spam postingan lama. Cover film ikut sebagai foto.
 
 ## Jalan di GitHub Actions (gratis, tanpa VPS)
 
@@ -136,8 +174,7 @@ Catatan:
 |---|---|
 | `main.py` | entrypoint: polling loop, CLI flags |
 | `config.py` | baca `.env` |
-| `sources.py` | fetcher pahe.ink & dramaday.me (wp-json + RSS fallback) |
-| `storage.py` | simpan `state.json` (id → modified) |
+| `sources.py` | fetcher pahe.ink & dramaday.me (wp-json + RSS fallback) + n3x.me (JSON API) |
 | `notify.py` | kirim ke Telegram Bot API |
 | `requirements.txt` | dependensi |
 

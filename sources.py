@@ -206,6 +206,74 @@ def fetch_source(
         return fetch_rss(base_url)
 
 
+# ---------------- n3x.me (Eyrda, JSON API, bukan WordPress) ----------------
+
+def _iso_to_wib(iso: str) -> str:
+    """'2026-09-25T11:29:43.000Z' (UTC) -> '2026-09-25 18:29:43' (WIB).
+    Gagal parse = kembalikan apa adanya."""
+    from datetime import timedelta, timezone
+    from datetime import datetime as _dt
+
+    try:
+        dt = _dt.fromisoformat((iso or "").replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.astimezone(timezone.utc) + timedelta(hours=7)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:  # noqa: BLE001
+        return (iso or "").replace("T", " ")
+
+
+def fetch_n3x(base_url: str, per_page: int = 15) -> tuple[list[dict], str]:
+    """Ambil rilisan terbaru n3x.me via /api/posts (sudah urut terbaru).
+    Return (posts, method). Raises RuntimeError kalau gagal total.
+
+    API tidak punya konsep modified -> date == modified, sehingga hanya
+    postingan BARU yang memicu notif (update tidak pernah fire). Ini juga
+    otomatis kebal spam postingan lama seperti kasus pahe 2018.
+    """
+    data = _get(f"{base_url}/api/posts?page=1&limit={per_page}").json()
+    items = data.get("posts", []) if isinstance(data, dict) else data
+    posts = []
+    for it in (items or [])[:per_page]:
+        pid = str(it.get("id", ""))
+        if not pid:
+            continue
+        slug = (it.get("slug") or "").strip()
+        typ = str(it.get("type") or "movie").lower()
+        path = "series" if typ in ("series", "tv", "show") else "movie"
+        link = f"{base_url}/{path}/{pid}-{slug}" if slug else base_url
+        cover = it.get("cover_image_url") or ""
+        if cover.startswith("/"):
+            cover = base_url + cover
+        wib = _iso_to_wib(it.get("created_at", ""))
+        genres = [g.strip() for g in str(it.get("genres") or "").split(",") if g.strip()]
+        year = str(it.get("release_year") or "").strip()
+        title = _unescape((it.get("title") or "").strip())
+        if year:
+            title = f"{title} ({year})"
+        rating = it.get("tmdb_rating") or it.get("rating") or ""
+        posts.append(
+            {
+                "id": pid,
+                "title": title,
+                "link": link,
+                "date": wib,
+                "modified": wib,  # API tak mengenal modified -> samakan
+                "description": _unescape(_strip_html(it.get("description") or ""))[:300],
+                "categories": genres,
+                "cat_ids": [],
+                "tag_ids": [],
+                "poster": cover,
+                "year": year,
+                "rating": str(rating),
+                "duration": (it.get("duration") or "").strip(),
+                "kind": typ,
+            }
+        )
+    return posts, "n3x-api"
+
+
 # ---------------- taxonomy (nama kategori / tag) ----------------
 
 def get_taxonomy_map(base_url: str) -> dict:
@@ -328,3 +396,27 @@ def match_filter(title: str, cats: list[str], include: list[str], exclude: list[
     if include and not any(k in hay for k in include):
         return False
     return True
+
+
+def post_age_days(date_wib: str) -> float | None:
+    """Umur postingan dalam hari berdasar tanggal publish (WIB).
+
+    Input format WIB dari fetcher: 'YYYY-MM-DD HH:MM:SS'.
+    Return None kalau format tidak dikenali (anggap recent agar tidak ke-skip).
+    Dipakai untuk anti-spam: postingan lama (mis. 2018) yang ke-touch
+    `modified`-nya tidak boleh memicu notif lagi.
+    """
+    from datetime import datetime
+
+    s = (date_wib or "").strip()
+    if not s:
+        return None
+    try:
+        # format utama WIB: '2026-09-23 07:53:06' (boleh ada detik hilang)
+        dt = datetime.strptime(s[:19], "%Y-%m-%d %H:%M:%S")
+    except Exception:  # noqa: BLE001
+        try:
+            dt = datetime.strptime(s[:16], "%Y-%m-%d %H:%M")
+        except Exception:  # noqa: BLE001
+            return None
+    return (datetime.now() - dt).total_seconds() / 86400

@@ -47,6 +47,13 @@ jobs:
           PER_PAGE: "15"
           NOTIFY_UPDATES: "true"
           DRAMADAY_EXCLUDE: "OST"
+          PAHE_MAX_AGE_DAYS: "14"
+          DRAMADAY_MAX_AGE_DAYS: "90"
+          PAHE_NOTIFY_UPDATES: "false"
+          DRAMADAY_NOTIFY_UPDATES: "true"
+          N3X_MAX_AGE_DAYS: "14"
+          N3X_NOTIFY_UPDATES: "false"
+          N3X_EXCLUDE: ""
         run: |
           if [ -f state.json ]; then
             python main.py --once
