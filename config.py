@@ -63,9 +63,11 @@ class Config:
     MAX_AGE_DAYS: int = _int("MAX_AGE_DAYS", 30)
     _PAHE_MAX_AGE_OPT: int | None = _int_opt("PAHE_MAX_AGE_DAYS")
     _DRAMADAY_MAX_AGE_OPT: int | None = _int_opt("DRAMADAY_MAX_AGE_DAYS")
-    # Pahe film baru saja (7-14 hari). Dramaday boleh 60-90 hari karena
-    # drama ongoing masih update episode 2-3 bulan setelah publish.
-    PAHE_MAX_AGE_DAYS: int = _PAHE_MAX_AGE_OPT if _PAHE_MAX_AGE_OPT is not None else 14
+    # Pahe posting deras (puluhan/hari) dan pack Complete sering ke-touch ulang
+    # tanpa perubahan isi -> batas 3 hari agar hanya rilisan fresh yang notif.
+    # Dramaday boleh 60-90 hari karena drama ongoing update episode 2-3 bulan
+    # setelah publish.
+    PAHE_MAX_AGE_DAYS: int = _PAHE_MAX_AGE_OPT if _PAHE_MAX_AGE_OPT is not None else 3
     DRAMADAY_MAX_AGE_DAYS: int = (
         _DRAMADAY_MAX_AGE_OPT if _DRAMADAY_MAX_AGE_OPT is not None else 90
     )

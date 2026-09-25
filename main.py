@@ -105,6 +105,28 @@ def _enrich_dramaday(post: dict, tax: dict, base_url: str, with_info: bool = Tru
     return info, cat_names
 
 
+def _canon_link(link: str) -> str:
+    """Kunci dedup stabil lintas metode fetch.
+
+    wp-json memakai id numerik ('219181'), RSS memakai guid URL
+    ('https://pahe.ink/?p=219181') untuk postingan yang SAMA. Tanpa kunci
+    kedua, tiap flip wp-json <-> RSS (mis. saat Cloudflare 403) membuat
+    semua postingan terlihat BARU lagi. `link` stabil di kedua metode.
+    """
+    return (link or "").strip().rstrip("/")
+
+
+def _split_state(seen: dict) -> tuple[dict, dict]:
+    """Pecah state per-source jadi (ids, links).
+
+    Kompatibel mundur dengan format lama {id: modified} (dianggap ids).
+    """
+    if isinstance(seen, dict) and isinstance(seen.get("ids"), dict):
+        links = seen.get("links", {})
+        return dict(seen["ids"]), dict(links) if isinstance(links, dict) else {}
+    return dict(seen) if isinstance(seen, dict) else {}, {}
+
+
 def check_once(send: bool = True) -> int:
     """Satu putaran cek. Return jumlah notif terkirim."""
     state = load(Config.STATE_FILE)
@@ -116,7 +138,7 @@ def check_once(send: bool = True) -> int:
         detail = src.get("detail", False)
         notify_updates = src.get("notify_updates", Config.NOTIFY_UPDATES)
         max_age = src.get("max_age_days", 0) or 0
-        seen: dict = state.get(key, {})
+        seen_ids, seen_links = _split_state(state.get(key, {}))
         try:
             if key == "n3x":
                 posts, method = fetch_n3x(src["base"], Config.PER_PAGE)
@@ -130,16 +152,26 @@ def check_once(send: bool = True) -> int:
         if src.get("enrich", False) and key not in tax_cache:
             tax_cache[key] = get_taxonomy_map(src["base"])
 
-        new_state = dict(seen)
+        new_ids, new_links = dict(seen_ids), dict(seen_links)
         # kirim dari yang terlama agar pesan urut kronologis
         for post in reversed(posts):
             pid = post["id"]
             mod = post["modified"]
-            old_mod = seen.get(pid)
+            link_key = _canon_link(post.get("link", ""))
+            old_mod = seen_ids.get(pid)
+            if old_mod is None and link_key and link_key in seen_links:
+                # Postingan sama, skema ID beda (flip wp-json <-> RSS).
+                # Catat diam-diam, JANGAN notif (mencegah duplikat BARU).
+                new_ids[pid] = mod
+                new_links[link_key] = mod
+                print(f"  [skip-flip] {post['title'][:70]}")
+                continue
             is_new = old_mod is None
             is_update = (not is_new) and (old_mod != mod)
 
-            new_state[pid] = mod
+            new_ids[pid] = mod
+            if link_key:
+                new_links[link_key] = mod
 
             # --- Anti-spam postingan lama ---
             # orderby=modified membuat postingan 2018 yang ke-touch naik ke atas.
@@ -177,9 +209,13 @@ def check_once(send: bool = True) -> int:
                             caption, fallback = format_n3x(post, is_update=is_update)
                         else:
                             caption, fallback = format_pahe(post, is_update=is_update)
+                        photos: str | list[str] = post.get("poster", "")
+                        if key == "n3x":
+                            # cover lokal n3x.me sering 404 -> coba backdrop, lalu teks
+                            photos = [post.get("poster", ""), post.get("poster_fallback", "")]
                         n = broadcast_media(
                             Config.BOT_TOKEN, Config.CHAT_IDS,
-                            post.get("poster", ""), caption, fallback,
+                            photos, caption, fallback,
                         )
                     else:
                         text = format_post(label, post, is_update=is_update)
@@ -190,7 +226,7 @@ def check_once(send: bool = True) -> int:
                 else:
                     print(f"  [skip-kirim] {post['title'][:70]}")
 
-        state[key] = new_state
+        state[key] = {"ids": new_ids, "links": new_links}
 
     if send:
         save(Config.STATE_FILE, state)
@@ -206,7 +242,12 @@ def do_init() -> None:
                 posts, method = fetch_n3x(src["base"], Config.PER_PAGE)
             else:
                 posts, method = fetch_source(src["key"], src["base"], Config.PER_PAGE)
-            state[src["key"]] = {p["id"]: p["modified"] for p in posts}
+            ids = {p["id"]: p["modified"] for p in posts}
+            links = {
+                _canon_link(p.get("link", "")): p["modified"]
+                for p in posts if _canon_link(p.get("link", ""))
+            }
+            state[src["key"]] = {"ids": ids, "links": links}
             print(f"[{src['label']}] init {len(posts)} post via {method}")
         except Exception as e:  # noqa: BLE001
             print(f"[{src['label']}] init gagal: {e}")

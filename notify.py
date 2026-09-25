@@ -116,14 +116,27 @@ def broadcast(token: str, chat_ids: list[str], text: str) -> int:
 
 
 def broadcast_media(
-    token: str, chat_ids: list[str], photo_url: str, caption: str, fallback_text: str
+    token: str, chat_ids: list[str], photo_url: str | list[str], caption: str, fallback_text: str
 ) -> int:
-    """Kirim foto ke semua chat; kalau foto gagal, fallback ke pesan teks."""
+    """Kirim foto ke semua chat; coba tiap kandidat berurutan.
+
+    photo_url boleh string tunggal (kompatibel lama) atau list kandidat.
+    Kalau semua foto gagal (mis. CDN n3x.me 404), fallback ke pesan teks.
+    """
+    if isinstance(photo_url, str):
+        candidates = [photo_url] if photo_url else []
+    else:
+        candidates = [u for u in (photo_url or []) if u]
     ok = 0
     for cid in chat_ids:
-        if photo_url and send_photo(token, cid, photo_url, caption):
-            ok += 1
-        elif send_message(token, cid, fallback_text):
+        sent = False
+        for url in candidates:
+            if send_photo(token, cid, url, caption):
+                sent = True
+                break
+        if not sent and send_message(token, cid, fallback_text):
+            sent = True
+        if sent:
             ok += 1
         time.sleep(0.4)
     return ok

@@ -246,6 +246,15 @@ def fetch_n3x(base_url: str, per_page: int = 15) -> tuple[list[dict], str]:
         cover = it.get("cover_image_url") or ""
         if cover.startswith("/"):
             cover = base_url + cover
+        backdrop = it.get("backdrop_image_url") or ""
+        if backdrop.startswith("/"):
+            backdrop = base_url + backdrop
+        # Gambar lokal n3x.me sering 404 (CDN mati), TMDB hampir selalu hidup.
+        # Dahulukan host yang terbukti bisa di-fetch server Telegram; sisanya
+        # tetap dicoba berurutan oleh broadcast_media (poster -> fallback -> teks).
+        cands = [u for u in (cover, backdrop) if u]
+        cands.sort(key=lambda u: 0 if "tmdb" in u else 1)
+        poster, poster_fb = (cands + ["", ""])[:2]
         wib = _iso_to_wib(it.get("created_at", ""))
         genres = [g.strip() for g in str(it.get("genres") or "").split(",") if g.strip()]
         year = str(it.get("release_year") or "").strip()
@@ -264,7 +273,8 @@ def fetch_n3x(base_url: str, per_page: int = 15) -> tuple[list[dict], str]:
                 "categories": genres,
                 "cat_ids": [],
                 "tag_ids": [],
-                "poster": cover,
+                "poster": poster,
+                "poster_fallback": poster_fb,
                 "year": year,
                 "rating": str(rating),
                 "duration": (it.get("duration") or "").strip(),

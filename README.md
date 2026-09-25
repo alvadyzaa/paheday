@@ -71,19 +71,30 @@ NOTIFY_UPDATES=true
 
 ### 5. Anti-spam postingan lama (mis. postingan 2018 ikut ke-notify)
 
-Penyebab: bot memakai `orderby=modified`, jadi postingan lama yang ke-touch
-(edit typo/iklan/SEO → `modified` jadi hari ini) naik ke daftar teratas dan
-ikut terkirim sebagai BARU/UPDATE.
+Penyebab:
+1. bot memakai `orderby=modified`, jadi postingan lama yang ke-touch
+   (edit typo/iklan/SEO → `modified` jadi hari ini) naik ke daftar teratas dan
+   ikut terkirim sebagai BARU/UPDATE.
+2. wp-json dan RSS memakai **skema ID beda** (numerik vs URL `?p=`) untuk
+   postingan yang sama. Tiap flip metode (mis. saat wp-json kena Cloudflare
+   403) membuat semua postingan terlihat BARU lagi.
 
-Fix: bot hanya mengirim postingan **recent** berdasar tanggal **publish**
-(`date`), bukan `modified`. Postingan tua tetap ditandai sudah-dilihat
-agar tidak spam berulang (log `[skip-tua]`).
+Fix:
+- bot hanya mengirim postingan **recent** berdasar tanggal **publish**
+  (`date`), bukan `modified`. Postingan tua tetap ditandai sudah-dilihat
+  agar tidak spam berulang (log `[skip-tua]`).
+- state mencatat **dua kunci** (`ids` + `links`) per source. Postingan yang
+  dikenali lewat link tapi ID-nya baru (flip metode) dicatat diam-diam
+  tanpa notif (log `[skip-flip]`).
+- poster n3x.me dicoba berurutan (cover → backdrop → teks) dengan host
+  TMDB didahulukan, karena gambar lokal n3x.me sering 404.
 
 Di `.env`:
 
 ```ini
 # batas umur publish yang boleh memicu notif (hari). 0 = tanpa batas.
-PAHE_MAX_AGE_DAYS=14       # pahe = film sekali-post, cukup 7-14 hari
+PAHE_MAX_AGE_DAYS=3        # pahe posting deras + pack Complete sering ke-touch
+                           # ulang tanpa perubahan isi -> hanya rilisan fresh
 DRAMADAY_MAX_AGE_DAYS=90   # dramaday = drama ongoing, 60-90 hari agar
                            # update episode 2-3 bulan setelah publish tetap masuk
 # update pahe hampir selalu noise -> default false.

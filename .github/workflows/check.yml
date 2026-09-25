@@ -47,7 +47,7 @@ jobs:
           PER_PAGE: "15"
           NOTIFY_UPDATES: "true"
           DRAMADAY_EXCLUDE: "OST"
-          PAHE_MAX_AGE_DAYS: "14"
+          PAHE_MAX_AGE_DAYS: "3"
           DRAMADAY_MAX_AGE_DAYS: "90"
           PAHE_NOTIFY_UPDATES: "false"
           DRAMADAY_NOTIFY_UPDATES: "true"
