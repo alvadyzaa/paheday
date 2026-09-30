@@ -1,7 +1,7 @@
-# PaheDay — Telegram Notifier untuk pahe.ink, dramaday.me & n3x.me
+# PaheDay — Telegram Notifier untuk pahe.ink & dramaday.me
 
 Bot Python sederhana yang memantau postingan **baru maupun update episode**
-dari `pahe.ink`, `dramaday.me`, dan `n3x.me`, lalu mengirim notifikasi ke Telegram.
+dari `pahe.ink` dan `dramaday.me`, lalu mengirim notifikasi ke Telegram.
 
 ## Kenapa bukan RSS saja?
 
@@ -86,8 +86,6 @@ Fix:
 - state mencatat **dua kunci** (`ids` + `links`) per source. Postingan yang
   dikenali lewat link tapi ID-nya baru (flip metode) dicatat diam-diam
   tanpa notif (log `[skip-flip]`).
-- poster n3x.me dicoba berurutan (cover → backdrop → teks) dengan host
-  TMDB didahulukan, karena gambar lokal n3x.me sering 404.
 
 Di `.env`:
 
@@ -181,21 +179,6 @@ Link download
 ```
 Poster film ikut sebagai foto, tahun/kualitas/codec dibaca dari tag.
 
-## Contoh notif n3x.me (foto + caption)
-
-```text
-POST BARU - N3x.me (Movie)
-Antz (1998)
-Genre: Animation, Comedy, Family
-1998 | Rating 7.1 | 83 min
-Link streaming/download
-Diposting: Jumat, 25 Sep 2026 - 18:29 WIB
-```
-
-Sumber ketiga via public JSON API (`/api/posts`, pagination `?page&limit`).
-API tidak punya konsep `modified`, jadi hanya rilisan BARU yang memicu notif
-— otomatis kebal spam postingan lama. Cover film ikut sebagai foto.
-
 ## Jalan di GitHub Actions (gratis, tanpa VPS)
 
 Workflow sudah tersedia di `.github/workflows/check.yml` (jalan tiap 30 menit).
@@ -236,7 +219,7 @@ Catatan:
 |---|---|
 | `main.py` | entrypoint: polling loop, CLI flags |
 | `config.py` | baca `.env` |
-| `sources.py` | fetcher pahe.ink & dramaday.me (wp-json + RSS fallback) + n3x.me (JSON API) |
+| `sources.py` | fetcher pahe.ink & dramaday.me (wp-json + RSS fallback) |
 | `notify.py` | kirim ke Telegram Bot API |
 | `requirements.txt` | dependensi |
 

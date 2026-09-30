@@ -1,4 +1,4 @@
-"""PaheDay — Telegram notifier untuk pahe.ink, dramaday.me & n3x.me.
+"""PaheDay — Telegram notifier untuk pahe.ink & dramaday.me.
 
 Usage:
     python main.py            # loop polling
@@ -17,7 +17,6 @@ from notify import (
     broadcast,
     broadcast_media,
     format_dramaday,
-    format_n3x,
     format_pahe,
     format_post,
     send_message,
@@ -25,7 +24,6 @@ from notify import (
 )
 from sources import (
     fetch_post_detail,
-    fetch_n3x,
     fetch_source,
     get_taxonomy_map,
     match_filter,
@@ -64,19 +62,6 @@ SOURCES = [
         "notify_updates": Config.DRAMADAY_NOTIFY_UPDATES,
         "max_age_days": Config.DRAMADAY_MAX_AGE_DAYS,
         "enrich": True,    # WP: resolve kategori/tag + content/poster
-    },
-    {
-        "key": "n3x",
-        "label": "N3x.me",
-        "base": Config.N3X_URL,
-        "include": Config.N3X_INCLUDE,
-        "exclude": Config.N3X_EXCLUDE,
-        "detail": True,    # kirim format kaya + cover sebagai foto
-        "info": False,     # tidak perlu parse content (API sudah terstruktur)
-        "enrich": False,   # API JSON: genre/cover/tahun sudah ada di post
-        # API tidak punya modified -> hanya BARU yang fire (kebal spam lama).
-        "notify_updates": Config.N3X_NOTIFY_UPDATES,
-        "max_age_days": Config.N3X_MAX_AGE_DAYS,
     },
 ]
 
@@ -141,10 +126,7 @@ def check_once(send: bool = True) -> int:
         max_age = src.get("max_age_days", 0) or 0
         seen_ids, seen_links = _split_state(state.get(key, {}))
         try:
-            if key == "n3x":
-                posts, method = fetch_n3x(src["base"], Config.PER_PAGE)
-            else:
-                posts, method = fetch_source(key, src["base"], Config.PER_PAGE)
+            posts, method = fetch_source(key, src["base"], Config.PER_PAGE)
             print(f"[{label}] {len(posts)} post via {method}")
         except Exception as e:  # noqa: BLE001
             print(f"[{label}] GAGAL total: {e}")
@@ -206,17 +188,11 @@ def check_once(send: bool = True) -> int:
                             caption, fallback = format_dramaday(
                                 post, info, is_update=is_update
                             )
-                        elif key == "n3x":
-                            caption, fallback = format_n3x(post, is_update=is_update)
                         else:
                             caption, fallback = format_pahe(post, is_update=is_update)
-                        photos: str | list[str] = post.get("poster", "")
-                        if key == "n3x":
-                            # cover lokal n3x.me sering 404 -> coba backdrop, lalu teks
-                            photos = [post.get("poster", ""), post.get("poster_fallback", "")]
                         n = broadcast_media(
                             Config.BOT_TOKEN, Config.CHAT_IDS,
-                            photos, caption, fallback,
+                            post.get("poster", ""), caption, fallback,
                         )
                     else:
                         text = format_post(label, post, is_update=is_update)
@@ -239,10 +215,7 @@ def do_init() -> None:
     state = load(Config.STATE_FILE)
     for src in SOURCES:
         try:
-            if src["key"] == "n3x":
-                posts, method = fetch_n3x(src["base"], Config.PER_PAGE)
-            else:
-                posts, method = fetch_source(src["key"], src["base"], Config.PER_PAGE)
+            posts, method = fetch_source(src["key"], src["base"], Config.PER_PAGE)
             ids = {p["id"]: p["modified"] for p in posts}
             links = {
                 _canon_link(p.get("link", "")): p["modified"]
@@ -261,10 +234,7 @@ def do_test() -> None:
     print(f"[telegram] getMe: {'OK ' + info if ok else 'GAGAL ' + info}")
     for src in SOURCES:
         try:
-            if src["key"] == "n3x":
-                posts, method = fetch_n3x(src["base"], 3)
-            else:
-                posts, method = fetch_source(src["key"], src["base"], 3)
+            posts, method = fetch_source(src["key"], src["base"], 3)
             print(f"[{src['label']}] OK via {method}, contoh: {posts[0]['title'][:80]}")
         except Exception as e:  # noqa: BLE001
             print(f"[{src['label']}] GAGAL: {e}")
@@ -298,7 +268,7 @@ def main() -> None:
     print(f"PaheDay jalan. Interval {Config.CHECK_INTERVAL} dtk. Ctrl+C untuk berhenti.")
     if Config.SEND_STARTUP_MESSAGE:
         for cid in Config.CHAT_IDS:
-            send_message(Config.BOT_TOKEN, cid, "<b>PaheDay notifier aktif</b> - memantau pahe.ink, dramaday.me & n3x.me")
+            send_message(Config.BOT_TOKEN, cid, "<b>PaheDay notifier aktif</b> - memantau pahe.ink & dramaday.me")
     while True:
         try:
             n = check_once(send=True)

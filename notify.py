@@ -121,7 +121,7 @@ def broadcast_media(
     """Kirim foto ke semua chat; coba tiap kandidat berurutan.
 
     photo_url boleh string tunggal (kompatibel lama) atau list kandidat.
-    Kalau semua foto gagal (mis. CDN n3x.me 404), fallback ke pesan teks.
+    Kalau semua foto gagal, fallback ke pesan teks.
     """
     if isinstance(photo_url, str):
         candidates = [photo_url] if photo_url else []
@@ -240,45 +240,6 @@ def format_pahe(post: dict, is_update: bool = False) -> tuple[str, str]:
     lines.append(f"Diposting: {html.escape(format_waktu(pub))}")
     if mod and mod != pub:
         lines.append(f"Diupdate: {html.escape(format_waktu(mod))}")
-    caption = "\n".join(lines)
-
-    fallback = caption
-    fallback += f"\n{link}"
-    fallback += f"\n{link}"
-    return caption, fallback
-
-
-def format_n3x(post: dict, is_update: bool = False) -> tuple[str, str]:
-    """Return (caption, fallback_text) untuk n3x.me.
-
-    post['categories'] = genres, post['year']/['rating']/['duration']
-    diisi fetcher. is_update praktis tidak pernah True (API tak punya
-    modified), tapi tetap didukung demi konsistensi.
-    """
-    title = html.escape(post.get("title", "(tanpa judul)"))
-    link = html.escape(post.get("link", ""), quote=True)
-    pub = post.get("date", "") or ""
-    kind = (post.get("kind") or "movie").lower()
-    kind_label = "Series" if kind in ("series", "tv", "show") else "Movie"
-
-    tag = "UPDATE" if is_update else "POST BARU"
-    cats = [c for c in post.get("categories", []) if c][:5]
-
-    bits = []
-    if post.get("year"):
-        bits.append(str(post["year"]))
-    if post.get("rating"):
-        bits.append(f"Rating {post['rating']}")
-    if post.get("duration"):
-        bits.append(str(post["duration"]))
-
-    lines = [f"<b>{tag}</b> - N3x.me ({kind_label})", f"<b>{title}</b>"]
-    if cats:
-        lines.append("Genre: " + html.escape(", ".join(cats)))
-    if bits:
-        lines.append(html.escape(" | ".join(bits)))
-    lines.append(f'<a href="{link}">Link streaming/download</a>')
-    lines.append(f"Diposting: {html.escape(format_waktu(pub))}")
     caption = "\n".join(lines)
 
     fallback = caption

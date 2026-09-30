@@ -88,22 +88,9 @@ class Config:
     PAHE_EXCLUDE: list[str] = _csv("PAHE_EXCLUDE")
     DRAMADAY_INCLUDE: list[str] = _csv("DRAMADAY_INCLUDE")
     DRAMADAY_EXCLUDE: list[str] = _csv("DRAMADAY_EXCLUDE")
-    N3X_INCLUDE: list[str] = _csv("N3X_INCLUDE")
-    N3X_EXCLUDE: list[str] = _csv("N3X_EXCLUDE")
-
-    # --- n3x.me: API tanpa modified -> hanya postingan BARU yang fire ---
-    _N3X_MAX_AGE_OPT: int | None = _int_opt("N3X_MAX_AGE_DAYS")
-    N3X_MAX_AGE_DAYS: int = (
-        _N3X_MAX_AGE_OPT if _N3X_MAX_AGE_OPT is not None else 14
-    )
-    _N3X_UPD_OPT: bool | None = _bool_opt("N3X_NOTIFY_UPDATES")
-    N3X_NOTIFY_UPDATES: bool = (
-        _N3X_UPD_OPT if _N3X_UPD_OPT is not None else False
-    )
 
     PAHE_URL = "https://pahe.ink"
     DRAMADAY_URL = "https://dramaday.me"
-    N3X_URL = "https://n3x.me"
 
     # --- TMDB (upcoming movies). Key gratis: themoviedb.org -> Settings -> API ---
     TMDB_API_KEY: str = os.getenv("TMDB_API_KEY", "").strip()
