@@ -2,6 +2,8 @@
 
 Perintah yang didukung:
     /start, /help            -> bantuan
+    /searchpahe <judul>      -> cari film/series di pahe.ink
+    /searchdrama <judul>     -> cari drama/OST di dramaday.me
     /upcoming_kdrama         -> jadwal tayang Korea (TVMaze, hari ini + besok)
     /upcoming_series         -> jadwal tayang US (TVMaze, hari ini + besok)
     /upcoming_movies         -> film segera rilis (TMDB, butuh TMDB_API_KEY)
@@ -21,6 +23,7 @@ import requests
 
 from config import Config
 from notify import send_message
+from sources import search_wp
 from storage import load, save
 
 TVMAZE_SCHEDULE = "https://api.tvmaze.com/schedule"
@@ -42,12 +45,32 @@ _BULAN = {
 
 HELP_TEXT = (
     "<b>PaheDay commands</b>\n"
+    "/searchpahe &lt;judul&gt; - cari film/series di pahe.ink\n"
+    "/searchdrama &lt;judul&gt; - cari drama/OST di dramaday.me\n"
     "/upcoming_kdrama - jadwal tayang Korea (hari ini + besok)\n"
     "/upcoming_series - jadwal tayang US (hari ini + besok)\n"
     "/upcoming_movies - film segera rilis (TMDB)\n"
     "/releases_today - rilis hari ini (digest manual)\n"
     "/help - pesan ini"
 )
+
+
+def format_search(base_url: str, query: str, label: str, limit: int = 8) -> str:
+    """Hasil pencarian WP sebagai daftar judul yang bisa diklik."""
+    if not query.strip():
+        return f"Format: /{'searchpahe' if 'pahe' in base_url else 'searchdrama'} &lt;judul&gt;"
+    try:
+        results = search_wp(base_url, query, limit)
+    except Exception as e:  # noqa: BLE001
+        return f"Gagal mencari di {label}: {e}"
+    if not results:
+        return f'Tidak ada hasil untuk "<b>{html.escape(query)}</b>" di {label}.'
+    blocks = [f'Hasil pencarian "{html.escape(query)}" di {label} ({len(results)}):']
+    for n, r in enumerate(results, 1):
+        title = html.escape(r["title"] or "(tanpa judul)")
+        link = html.escape(r["link"], quote=True)
+        blocks.append(f'{n}. <a href="{link}">{title}</a>')
+    return "\n".join(blocks)[:4000]
 
 
 def fetch_schedule(country: str, day: date) -> list[dict]:
@@ -296,10 +319,14 @@ def _get_updates(token: str, offset: int) -> list[dict]:
     return data.get("result", []) or []
 
 
-def _route(cmd: str) -> str | None:
+def _route(cmd: str, args: str = "") -> str | None:
     """Return teks balasan, atau None kalau bukan command dikenal."""
     if cmd in ("/start", "/help"):
         return HELP_TEXT
+    if cmd == "/searchpahe":
+        return format_search(Config.PAHE_URL, args, "Pahe.ink")
+    if cmd == "/searchdrama":
+        return format_search(Config.DRAMADAY_URL, args, "Dramaday.me")
     if cmd == "/upcoming_kdrama":
         return format_upcoming("KR", "Upcoming K-Drama & Acara Korea")
     if cmd == "/upcoming_series":
@@ -334,10 +361,11 @@ def handle_commands(send: bool = True) -> int:
         if not text.startswith("/"):
             continue
         cmd = text.split()[0].split("@")[0].lower()
+        args = text.split(" ", 1)[1].strip() if " " in text else ""
         if chat_id not in allowed:
             print(f"[commands] abaikan {cmd} dari chat tak dikenal {chat_id}")
             continue
-        reply = _route(cmd)
+        reply = _route(cmd, args)
         if reply is None:
             continue
         if send:

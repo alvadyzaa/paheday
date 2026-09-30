@@ -15,6 +15,7 @@ import time
 import feedparser
 import requests
 from html import unescape as _unescape
+from urllib.parse import quote
 
 BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -204,6 +205,32 @@ def fetch_source(
     except Exception as e:  # noqa: BLE001
         print(f"[{name}] wp-json gagal ({e}), fallback ke RSS...")
         return fetch_rss(base_url)
+
+
+# ---------------- pencarian ----------------
+
+def search_wp(base_url: str, query: str, limit: int = 8) -> list[dict]:
+    """Cari post via WP REST /posts?search=. Return list {title, link, date}."""
+    if not query.strip():
+        return []
+    data = _get(
+        f"{base_url}/wp-json/wp/v2/posts"
+        f"?search={quote(query.strip(), safe='')}"
+        f"&per_page={limit}&_fields=id,title,link,date,excerpt"
+    ).json()
+    out = []
+    for it in data:
+        out.append(
+            {
+                "title": _unescape(_strip_html(it.get("title", {}).get("rendered", ""))),
+                "link": it.get("link", ""),
+                "date": _to_wib(it.get("date", "")),
+                "description": _unescape(_strip_html(
+                    it.get("excerpt", {}).get("rendered", "")
+                ))[:160],
+            }
+        )
+    return out
 
 
 # ---------------- taxonomy (nama kategori / tag) ----------------
