@@ -22,8 +22,13 @@ from datetime import date, timedelta
 import requests
 
 from config import Config
-from notify import send_message
-from sources import search_wp
+from notify import answer_callback, send_message
+from sources import (
+    extract_dramaday_downloads,
+    extract_pahe_downloads,
+    fetch_post_detail,
+    search_wp,
+)
 from storage import load, save
 
 TVMAZE_SCHEDULE = "https://api.tvmaze.com/schedule"
@@ -47,6 +52,7 @@ HELP_TEXT = (
     "<b>PaheDay commands</b>\n"
     "/searchpahe &lt;judul&gt; - cari film/series di pahe.ink\n"
     "/searchdrama &lt;judul&gt; - cari drama/OST di dramaday.me\n"
+    "(ketuk nomor hasil untuk link download langsung)\n"
     "/upcoming_kdrama - jadwal tayang Korea (hari ini + besok)\n"
     "/upcoming_series - jadwal tayang US (hari ini + besok)\n"
     "/upcoming_movies - film segera rilis (TMDB)\n"
@@ -55,22 +61,88 @@ HELP_TEXT = (
 )
 
 
-def format_search(base_url: str, query: str, label: str, limit: int = 8) -> str:
-    """Hasil pencarian WP sebagai daftar judul yang bisa diklik."""
+def format_search(base_url: str, query: str, label: str, limit: int = 8) -> tuple[str, dict | None]:
+    """Hasil pencarian WP sebagai daftar judul yang bisa diklik.
+
+    Return (teks, reply_markup). Markup berisi tombol nomor 1..N; ketuk
+    nomor untuk menerima link download langsung post tersebut.
+    """
+    src = "pahe" if "pahe" in base_url else "dd"
     if not query.strip():
-        return f"Format: /{'searchpahe' if 'pahe' in base_url else 'searchdrama'} &lt;judul&gt;"
+        return (f"Format: /{'searchpahe' if src == 'pahe' else 'searchdrama'} &lt;judul&gt;", None)
     try:
         results = search_wp(base_url, query, limit)
     except Exception as e:  # noqa: BLE001
-        return f"Gagal mencari di {label}: {e}"
+        return (f"Gagal mencari di {label}: {e}", None)
     if not results:
-        return f'Tidak ada hasil untuk "<b>{html.escape(query)}</b>" di {label}.'
+        return (f'Tidak ada hasil untuk "<b>{html.escape(query)}</b>" di {label}.', None)
     blocks = [f'Hasil pencarian "{html.escape(query)}" di {label} ({len(results)}):']
+    buttons = []
     for n, r in enumerate(results, 1):
         title = html.escape(r["title"] or "(tanpa judul)")
         link = html.escape(r["link"], quote=True)
         blocks.append(f'{n}. <a href="{link}">{title}</a>')
-    return "\n".join(blocks)[:4000]
+        if r.get("id"):
+            buttons.append({"text": str(n), "callback_data": f"{src}:{r['id']}"})
+    blocks.append("\nKetuk nomor untuk link download langsung.")
+    markup = {"inline_keyboard": [buttons]} if buttons else None
+    return ("\n".join(blocks)[:4000], markup)
+
+
+def format_pahe_links(title: str, groups: list[dict]) -> str:
+    """Link download langsung pahe, dikelompokkan per kualitas."""
+    if not groups:
+        return f"<b>{html.escape(title)}</b>\nLink download tidak ketemu di post. Buka halaman post-nya."
+    lines = [f"<b>{html.escape(title)}</b>", "Link download langsung:"]
+    for g in groups:
+        hosts = " | ".join(
+            f'<a href="{html.escape(u, quote=True)}">{html.escape(h)}</a>'
+            for h, u in g["links"]
+        )
+        block = f"\n<b>{html.escape(g['quality'])} | {html.escape(g['size'])}</b>\n{hosts}"
+        if len("\n".join(lines)) + len(block) > 3800:
+            lines.append("(dipotong — buka post untuk sisanya)")
+            break
+        lines.append(block)
+    return "\n".join(lines)
+
+
+def format_dramaday_links(title: str, dl: dict) -> str:
+    """Link download langsung dramaday per baris episode."""
+    rows = dl.get("rows", [])
+    if not rows:
+        return f"<b>{html.escape(title)}</b>\nLink download tidak ketemu di post. Buka halaman post-nya."
+    lines = [f"<b>{html.escape(title)}</b>", "Link download langsung:"]
+    skipped = 0
+    show = rows if len(rows) <= 4 else rows[-3:]
+    skipped = len(rows) - len(show)
+    if skipped:
+        lines.append(f"({skipped} episode sebelumnya — buka post untuk lengkap)")
+    for r in show:
+        hosts = " | ".join(
+            f'<a href="{html.escape(u, quote=True)}">{html.escape(h)}</a>'
+            for h, u in r["links"][:8]
+        )
+        block = f"\nEp {html.escape(r['eps'])}: {hosts}"
+        if len("\n".join(lines)) + len(block) > 3800:
+            lines.append("(dipotong — buka post untuk sisanya)")
+            break
+        lines.append(block)
+    return "\n".join(lines)
+
+
+def handle_download_callback(src: str, pid: str) -> str:
+    """Ambil link download langsung satu post. src: 'pahe' | 'dd'."""
+    base = Config.PAHE_URL if src == "pahe" else Config.DRAMADAY_URL
+    try:
+        detail = fetch_post_detail(base, pid)
+    except Exception as e:  # noqa: BLE001
+        return f"Gagal ambil post: {e}"
+    title = detail.get("title", "") or "Post"
+    if src == "pahe":
+        return format_pahe_links(title, extract_pahe_downloads(detail.get("content", "")))
+    info_rows = extract_dramaday_downloads(detail.get("content", ""))
+    return format_dramaday_links(title, info_rows)
 
 
 def fetch_schedule(country: str, day: date) -> list[dict]:
@@ -319,25 +391,25 @@ def _get_updates(token: str, offset: int) -> list[dict]:
     return data.get("result", []) or []
 
 
-def _route(cmd: str, args: str = "") -> str | None:
-    """Return teks balasan, atau None kalau bukan command dikenal."""
+def _route(cmd: str, args: str = "") -> tuple[str, dict | None]:
+    """Return (teks balasan, reply_markup), teks None kalau bukan command."""
     if cmd in ("/start", "/help"):
-        return HELP_TEXT
+        return (HELP_TEXT, None)
     if cmd == "/searchpahe":
         return format_search(Config.PAHE_URL, args, "Pahe.ink")
     if cmd == "/searchdrama":
         return format_search(Config.DRAMADAY_URL, args, "Dramaday.me")
     if cmd == "/upcoming_kdrama":
-        return format_upcoming("KR", "Upcoming K-Drama & Acara Korea")
+        return (format_upcoming("KR", "Upcoming K-Drama & Acara Korea"), None)
     if cmd == "/upcoming_series":
-        return format_upcoming("US", "Upcoming Series US")
+        return (format_upcoming("US", "Upcoming Series US"), None)
     if cmd == "/upcoming_movies":
-        return format_upcoming_movies(Config.TMDB_REGION)
+        return (format_upcoming_movies(Config.TMDB_REGION), None)
     if cmd == "/releases_today":
-        return build_release_digest() or "(belum ada rilis hari ini)"
+        return (build_release_digest() or "(belum ada rilis hari ini)", None)
     if cmd.startswith("/"):
-        return "Perintah tidak dikenal. Coba /help"
-    return None
+        return ("Perintah tidak dikenal. Coba /help", None)
+    return (None, None)
 
 
 def handle_commands(send: bool = True) -> int:
@@ -355,6 +427,25 @@ def handle_commands(send: bool = True) -> int:
     replied = 0
     for u in updates:
         offset = max(offset, int(u.get("update_id", 0)) + 1)
+        # --- tombol inline (ketuk nomor hasil search) ---
+        cb = u.get("callback_query") or {}
+        if cb:
+            chat_id = str(((cb.get("message") or {}).get("chat") or {}).get("id", ""))
+            data = str(cb.get("data") or "")
+            if chat_id in allowed and ":" in data:
+                src, pid = data.split(":", 1)
+                if src in ("pahe", "dd") and pid.strip().isdigit():
+                    answer_callback(Config.BOT_TOKEN, str(cb.get("id", "")), "Mengambil link...")
+                    reply = handle_download_callback(src, pid.strip())
+                    if send:
+                        for chunk in _chunks(reply):
+                            if send_message(Config.BOT_TOKEN, chat_id, chunk):
+                                replied += 1
+                            time.sleep(0.4)
+                        print(f"  [cmd] tombol {data} -> {chat_id}")
+                    else:
+                        print(f"  [skip-kirim-cb] {data} -> {chat_id}")
+            continue
         msg = u.get("message") or {}
         chat_id = str((msg.get("chat") or {}).get("id", ""))
         text = str(msg.get("text") or "").strip()
@@ -365,13 +456,16 @@ def handle_commands(send: bool = True) -> int:
         if chat_id not in allowed:
             print(f"[commands] abaikan {cmd} dari chat tak dikenal {chat_id}")
             continue
-        reply = _route(cmd, args)
+        reply, markup = _route(cmd, args)
         if reply is None:
             continue
         if send:
+            first = True
             for chunk in _chunks(reply):
-                if send_message(Config.BOT_TOKEN, chat_id, chunk):
+                if send_message(Config.BOT_TOKEN, chat_id, chunk,
+                                reply_markup=markup if first else None):
                     replied += 1
+                first = False
                 time.sleep(0.4)
             print(f"  [cmd] {cmd} -> {chat_id} ({replied} balas)")
         else:

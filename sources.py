@@ -145,12 +145,12 @@ def fetch_wp_json(
 
 
 def fetch_post_detail(base_url: str, post_id: str) -> dict:
-    """Ambil content + poster satu post (endpoint single, tanpa _fields
+    """Ambil content + poster + judul satu post (endpoint single, tanpa _fields
     agar _embed featuredmedia selalu ikut)."""
     try:
         it = _get(f"{base_url}/wp-json/wp/v2/posts/{post_id}?_embed").json()
     except Exception:  # noqa: BLE001
-        return {"content": "", "poster": ""}
+        return {"content": "", "poster": "", "title": ""}
     poster = ""
     try:
         media = it.get("_embedded", {}).get("wp:featuredmedia", [])
@@ -159,7 +159,8 @@ def fetch_post_detail(base_url: str, post_id: str) -> dict:
     except Exception:  # noqa: BLE001
         poster = ""
     content = it.get("content", {}).get("rendered", "")
-    return {"content": content, "poster": poster}
+    title = _unescape(_strip_html(it.get("title", {}).get("rendered", "")))
+    return {"content": content, "poster": poster, "title": title}
 
 
 # ---------------- RSS fallback ----------------
@@ -222,6 +223,7 @@ def search_wp(base_url: str, query: str, limit: int = 8) -> list[dict]:
     for it in data:
         out.append(
             {
+                "id": str(it.get("id", "")),
                 "title": _unescape(_strip_html(it.get("title", {}).get("rendered", ""))),
                 "link": it.get("link", ""),
                 "date": _to_wib(it.get("date", "")),
@@ -231,6 +233,78 @@ def search_wp(base_url: str, query: str, limit: int = 8) -> list[dict]:
             }
         )
     return out
+
+
+# ---------------- link download langsung ----------------
+
+_LINK_RE = re.compile(r'<a\s+href="([^"]+)"[^>]*>([^<]{1,12})</a>')
+_MARKED_LINK_RE = re.compile(r"\[LINK:([^|\]]+)\|([^\]]+)\]")
+_QUAL_RE = re.compile(r"(\d{3,4}p[^\n|[\]]{0,40})\|\s*([\d.]+\s*[MG]B)", re.IGNORECASE)
+
+
+def _marked_text(content_html: str) -> str:
+    """HTML -> teks, link pendek (<a> teks <=12 char) ditandai [LINK:label|url]."""
+    marked = _LINK_RE.sub(r"\n[LINK:\2|\1]\n", content_html or "")
+    text = _unescape(re.sub(r"<[^>]+>", " ", marked)).replace(" ", " ")
+    return re.sub(r"[ \t]+", " ", text)
+
+
+def extract_pahe_downloads(content_html: str) -> list[dict]:
+    """Parse box download pahe -> [{quality, size, links:[(host, url)]}].
+
+    Hanya tombol setelah header kualitas pertama yang diambil; berhenti
+    di 'Last Updated on' agar link navigasi/terkait tidak ikut.
+    """
+    text = _marked_text(content_html)
+    end = text.find("Last Updated on")
+    if end > 0:
+        text = text[:end]
+    events = []
+    for m in _QUAL_RE.finditer(text):
+        events.append((m.start(), "q", m.group(1).strip(), m.group(2).strip()))
+    for m in _MARKED_LINK_RE.finditer(text):
+        events.append((m.start(), "l", m.group(1).strip(), m.group(2).strip()))
+    events.sort(key=lambda e: e[0])
+    groups: list[dict] = []
+    for _, kind, a, b in events:
+        if kind == "q":
+            groups.append({"quality": a, "size": b, "links": []})
+        elif groups:
+            host = " ".join(a.split())
+            if host and b.startswith("http"):
+                groups[-1]["links"].append((host, b))
+    return [g for g in groups if g["links"]]
+
+
+def extract_dramaday_downloads(content_html: str) -> dict:
+    """Parse tabel download dramaday -> {rows:[{eps, links}], total_links}.
+
+    rows diurut menaik sesuai urutan tabel (baris terakhir = episode terbaru).
+    """
+    text = _marked_text(content_html)
+    start = text.find("Episode Quality Download")
+    if start < 0:
+        return {"rows": [], "total_links": 0}
+    end = text.find("Learn How to download", start)
+    seg = text[start:end if end > 0 else start + 8000]
+    row_re = re.compile(
+        r"(?<!\w)(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?\s+(?:1080p|720p|540p|480p)"
+    )
+    marks = list(row_re.finditer(seg))
+    rows = []
+    for i, m in enumerate(marks):
+        stop = marks[i + 1].start() if i + 1 < len(marks) else len(seg)
+        links = [
+            (a.strip(), b.strip())
+            for a, b in _MARKED_LINK_RE.findall(seg[m.start():stop])
+            if b.startswith("http")
+        ]
+        if not links:
+            continue
+        s, e = m.group(1), m.group(2) or m.group(1)
+        rows.append({"eps": f"{s}-{e}" if s != e else s, "links": links})
+    total = sum(len(r["links"]) for r in rows)
+    return {"rows": rows, "total_links": total}
 
 
 # ---------------- taxonomy (nama kategori / tag) ----------------

@@ -40,7 +40,8 @@ def format_waktu(s: str) -> str:
         return s
 
 
-def send_message(token: str, chat_id: str, text: str, retries: int = 3) -> bool:
+def send_message(token: str, chat_id: str, text: str, retries: int = 3,
+                 reply_markup: dict | None = None) -> bool:
     """Kirim pesan HTML. Return True jika ok."""
     url = API.format(token=token, method="sendMessage")
     payload = {
@@ -49,6 +50,8 @@ def send_message(token: str, chat_id: str, text: str, retries: int = 3) -> bool:
         "parse_mode": "HTML",
         "disable_web_page_preview": False,
     }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     last_err = ""
     for attempt in range(retries):
         try:
@@ -104,6 +107,19 @@ def send_photo(token: str, chat_id: str, photo_url: str, caption: str, retries: 
             time.sleep(2 * (attempt + 1))
     print(f"[notify] sendPhoto gagal ke {chat_id}: {last_err}")
     return False
+
+
+def answer_callback(token: str, callback_id: str, text: str = "") -> bool:
+    """Jawab tombol inline (hilangkan spinner loading)."""
+    try:
+        r = requests.post(
+            API.format(token=token, method="answerCallbackQuery"),
+            json={"callback_query_id": callback_id, "text": text[:200]},
+            timeout=15,
+        )
+        return bool(r.json().get("ok"))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def broadcast(token: str, chat_ids: list[str], text: str) -> int:
